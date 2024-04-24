@@ -1,0 +1,5 @@
+{
+    "sendOnReadyMessage": true,
+    "onReadyMessageChannelId": 123456,
+    "commandPrefix": "!"
+}
