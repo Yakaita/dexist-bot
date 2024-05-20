@@ -1,2 +1,4 @@
 .env
 config.json
+dump.csv
+script.py

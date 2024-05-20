@@ -1,18 +1,303 @@
+import discord.context_managers
 from discord.ext import commands
 from dotenv import load_dotenv
-import discord, os, json
+from playhouse.mysql_ext import MySQLConnectorDatabase
+from peewee import *
+from datetime import date,datetime,timedelta
+import discord, os, json, logging, math
+import random as rand
+
+logger = logging.getLogger('peewee')
+logger.addHandler(logging.StreamHandler())
+logger.setLevel(logging.DEBUG)
 
 #load the .env file
 load_dotenv()
 #load the config
 with open('config.json','r') as config_file: config = json.load(config_file)
 
+discordColors = {
+    'Red':discord.Color.red(),
+    'Blue':discord.Color.blue(),
+    'Yellow':discord.Color.yellow(),
+    'Green':discord.Color.green(),
+    'Black':discord.Color.default(),
+    'Brown':discord.Color.dark_gold(),
+    'Purple':discord.Color.purple(),
+    'Gray':discord.Color.light_gray(),
+    'White':discord.Color.light_embed(),
+    'Pink':discord.Color.pink()
+}
+
 # setup bot
 bot = commands.Bot(command_prefix=config["commandPrefix"], intents=discord.Intents.all())
 
-# On ready event
+mydb = MySQLConnectorDatabase(
+  "u491157569_dexist",
+  user=os.getenv("DB_USERNAME"),
+  password=os.getenv("DB_PASSWORD"),
+  host=os.getenv("DB_HOST")
+)
+
+class BaseModel(Model):
+    class Meta:
+        database=mydb
+
+class Pokemon(BaseModel):
+    identity = CharField()
+    name = CharField()
+    national = IntegerField()
+    color = CharField()
+    isFemale = BooleanField(default=False)
+    varient = CharField()
+    type1 = CharField()
+    type2 = CharField(null=True,default=None)
+    generation = IntegerField()
+    before = IntegerField(null=True,default=None)
+    after = IntegerField(null=True,default=None)
+
+class Game(BaseModel):
+    name = CharField()
+    image = CharField()
+    generation = IntegerField()
+    spriteLocation = CharField()
+
+class GamePokemon(BaseModel):
+    pokemon = ForeignKeyField(Pokemon)
+    game = ForeignKeyField(Game)
+    notes = CharField()
+    regional = IntegerField()
+
+class User(BaseModel):
+    id = BigIntegerField(primary_key=True, unique=True)
+    level = IntegerField(default=0)
+    xp = IntegerField(default=0)
+    shinyXpTimesHit = IntegerField(default=0)
+    shinyXpEarned = IntegerField(default=0)
+
+class Leaderboard(BaseModel):
+    user = ForeignKeyField(User)
+    pokemon = ForeignKeyField(Pokemon)
+    points = IntegerField(default=1)
+    date = DateField(default=date.today())
+    image = CharField()
+
+
+# --------------------------------------------------------- Xp and level stuff
+async def xpForLevel(level: int) -> int:
+    if level == 100: return 0
+
+    if level <= 5: return math.floor(4 * level**3 / 5 + 30)
+    else: return math.floor(4 * level**3 / 5)
+
+async def addXP(amount: int, user: User, canHitOdds: bool = True):
+    if user.level == 100: return False
+
+    randomNum = rand.randint(1,8192)
+
+    if canHitOdds and  randomNum == 2024:
+        channel = bot.get_channel(1237051742781313066)
+        member = bot.get_user(user.id)
+        await channel.send(f"{member.mention} got lucky and got shiny XP! Thats 10 times the normal amount of xp!")
+        query = User.update(shinyXpTimesHit = User.shinyXpTimesHit + 1,shinyXpEarned = User.shinyXpEarned + amount * 9)
+        query.execute()
+
+        amount = amount * 10
+
+    xpNeededForNextLevel = await xpForLevel(user.level)
+    if user.xp + amount >= xpNeededForNextLevel:
+        newXP = user.xp + amount - xpNeededForNextLevel
+        await levelUp(user)
+
+        if newXP != 0: 
+            user = User.get_by_id(user.id)
+            await addXP(newXP,user,False)
+    else: 
+        query = User.update(xp = User.xp + amount).where(User.id == user.id)
+        query.execute()
+
+async def levelUp(user: User):
+    query = User.update(level = User.level + 1, xp = 0).where(User.id == user.id)
+    query.execute()
+
+    channel = bot.get_channel(1237051742781313066)
+    member = bot.get_user(user.id)
+    embed = discord.Embed(
+        title = member.display_name + " just hit level " + str(user.level + 1) + "!",
+        description = "You need " + str(await xpForLevel(user.level + 1)) + " xp to level up again!" if (user.level + 1) < 100 else "You can't level up anymore my friend. You've reached the end!",
+        color= discord.Color.gold()
+    )
+    embed.set_author(
+        name = member.display_name,
+        icon_url = member.avatar.url       
+    )
+
+    await channel.send(member.mention, embed = embed)
+
+@bot.command()
+async def level(ctx, display_name: str = None):
+    mydb.connect()
+    
+    if display_name:
+        member = discord.utils.get(ctx.guild.members, display_name=display_name)
+        if not member:
+            await ctx.send("Member not found.")
+            mydb.close()
+            return
+    else: member = ctx.author
+            
+    user = User.get_by_id(member.id)
+    embed = discord.Embed(
+        title = member.display_name + " is level " + str(user.level),
+        description = "XP: " + str(user.xp) + "/" + str(await xpForLevel(user.level)) if (user.level) < 100 else "No more xp.",
+        color= discord.Color.gold()
+    )
+    embed.add_field(
+        name="Shiny XP Hit",
+        value=user.shinyXpTimesHit,
+        inline=True
+    )
+    embed.add_field(
+        name="Shiny XP Earned",
+        value=user.shinyXpEarned,
+        inline=True
+    )
+    embed.set_author(
+        name = member.display_name,
+        icon_url = member.avatar.url       
+    )
+    embed.set_footer(
+        text = "Requested by " + ctx.author.display_name,
+        icon_url = ctx.author.avatar.url
+    )
+
+    await ctx.send(embed = embed)
+
+    mydb.close()
+
+# --------------------------------------------------------- end of xp / level stuff
+# --------------------------------------------------------- Pokemon stuff
+
+async def getPokemonCard(identifier: str) -> discord.Embed:
+    mydb.connect()
+
+    games = []
+
+    if identifier == 'random':
+        pokemon = Pokemon.select().order_by(fn.Rand()).limit(1).get()
+    else:
+        try:
+            pokemon = Pokemon.get(Pokemon.identity == identifier)
+        except Pokemon.DoesNotExist:
+            mydb.close()
+            raise ValueError(f"Pokemon with id {id} does not exist.")
+        except GamePokemon.DoesNotExist:
+            mydb.close()
+        
+    gamePokemon = GamePokemon.select(GamePokemon, Pokemon,Game).join(Pokemon).switch(GamePokemon).join(Game).where(Pokemon.id == pokemon.id)
+    games = [gameLine.game.name for gameLine in gamePokemon]
+    name_parts = [pokemon.name]
+    if pokemon.varient: name_parts.append(pokemon.varient)
+    if pokemon.isFemale == 1: name_parts.append("Female")
+
+    if len(name_parts) > 1: name = f"{pokemon.name} ({" ".join(name_parts[1:])})"
+    else: name = pokemon.name
+        
+    mydb.close()
+
+    types = [pokemon.type1]
+    if pokemon.type2 != "NA": types.append(pokemon.type2)
+    
+    embed = discord.Embed(
+        title=name,
+        description=pokemon.identity,
+        url='https://pokemondb.net/pokedex/' + str(pokemon.national),
+        color=discordColors[pokemon.color]
+    )
+    embed.set_image(url="https://github.com/okwurt/dextracker/blob/main/sprites/games/home/shiny/"+ pokemon.identity +".png?raw=true")
+    embed.add_field(name = "Types" if len(types) > 1 else "Type", value = "\n".join(types) if len(types) > 1 else pokemon.type1, inline = True)
+    embed.add_field(name = "Color", value = pokemon.color, inline = True)
+    embed.add_field(name = "Generation", value = pokemon.generation, inline = True)
+    embed.add_field(name = "National Pokedex Number", value = pokemon.national, inline = True)
+    embed.add_field(name = "Available Games", value = "None" if games.__len__() == 0 else "\n".join(games), inline = False)
+    embed.set_footer(text=pokemon.id)
+
+    return embed
+
+@bot.command()
+async def random(ctx):
+    card = await getPokemonCard('random')
+    await ctx.send(embed=card)
+
+@bot.command(aliases=["dex"])
+async def pokedex(ctx, identity: str):
+    try:
+        card = await getPokemonCard(identity)
+    except ValueError as e:
+        await ctx.send(f"Error: {e}")
+        return
+
+    await ctx.send(embed=card)
+
+# --------------------------------------------------------- end of Pokemon stuff
+# --------------------------------------------------------- bot stuff
+    
 @bot.event
 async def on_ready():
     if config["sendOnReadyMessage"]: await bot.get_channel(config["onReadyMessageChannelId"]).send("Ready to shiny hunt!")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot: return
+
+    memberID = message.author.id
+    
+    mydb.connect()
+
+    try:
+        user = User.get(User.id == memberID)
+    except User.DoesNotExist:
+        user = User.create(id = memberID)
+
+    await addXP(1,user)
+
+    mydb.close()
+    await bot.process_commands(message)
+
+# --------------------------------------------------------- end of bot stuff
+# --------------------------------------------------------- weekly and leaderboard stuff
+
+@bot.command(aliases=["lb"])
+async def leaderboard(ctx, date: str = 'None'):
+    mydb.connect()
+
+    if date != 'None':
+        date = datetime.now() if date == 'today' else datetime.strptime(date,'%Y-%m-%d')
+
+        monday_before = date - timedelta(days=date.weekday())
+        monday_after = date + timedelta(days=7-date.weekday())
+
+        query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).where((Leaderboard.date >= monday_before) & (Leaderboard.date < monday_after)).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
+    else:
+        query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
+
+    users = []
+
+    users = [" - ".join([ctx.guild.get_member(user.user.id).display_name,str(user.points)]) for user in query]
+
+    embed = discord.Embed(
+        title="Leaderboard (All Time)",
+        color=discordColors["Pink"]
+    )
+    embed.add_field(
+        name="Users",
+        value="\n".join(users)
+    )
+
+    await ctx.send(embed=embed)
+
+    mydb.close()
+
+# --------------------------------------------------------- end of weekly and leaderboard stuff
 
 bot.run(os.getenv("BOT_TOKEN"))
