@@ -26,6 +26,14 @@ discordColors = {
     'White':discord.Color.light_embed(),
     'Pink':discord.Color.pink()
 }
+challengeDescriptions = {
+    "Color":["Red", "Blue", "Yellow", "Green", "Black", "Brown", "Purple", "Gray", "White", "Pink"],
+    "Generation":"123456789",
+    "Starting Letter":"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "Team":["Aaron", "Acerola", "Adaman", "Agatha", "Akari", "Alder", "Aliana", "Allister", "Archer", "Archie", "Ariana", "Atticus", "Avery", "Barry", "Bea", "Bede", "Beni", "Bertha", "Bianca", "Blaine", "Blue", "Brassius", "Brawly", "Brendan", "Brock", "Bruno", "Brycen", "Bryony", "Bugsy", "Burgh", "Byron", "Caitlin", "Calem", "Candice", "Celosia", "Charm", "Charon", "Cheren", "Chili", "Chuck", "Cilan", "Clair", "Clay", "Clemont", "Colress", "Courtney", "Crasher Wake", "Cress", "Cynthia", "Cyrus", "Diantha", "Drake", "Drasna", "Drayden", "Elesa", "Emmet", "Eri", "Erika", "Falkner", "Fantina", "Flannery", "Flint", "Gaeric", "Gardenia", "Geeta", "Ghetsis", "Giacomo", "Giovanni", "Glacia", "Gladion", "Gordie", "Grant", "Grimsley", "Grusha", "Guzma", "Hala", "Hassel", "Hau", "Hop", "Hugh", "Ingo", "Iono", "Irida", "Iris", "Janine", "Jasmine", "Juan", "Jupiter", "Kabu", "Kahili", "Kamado", "Karen", "Katy", "Klara", "Kofu", "Koga", "Korrina", "Lance", "Larry", "Lenora", "Leon", "Lian", "Lorelei", "Lt Surge", "Lucian", "Lysandre", "Mable", "Mai", "Malva", "Marlon", "Marnie", "Mars", "Marshal", "Matt", "Maxie", "May", "Maylene", "Mela", "Melli", "Melony", "Milo", "Misty", "Molayne", "Morty", "Mustard", "N", "Nemona", "Nessa", "Norman", "Olivia", "Olympia", "Opal", "Ortega", "Penny", "Peony", "Petrel", "Phoebe", "Piers", "Plumeria", "Poppy", "Proton", "Pryce", "Raihan", "Ramos", "Red", "Rei", "Rika", "Roark", "Roxanne", "Roxie", "Ryme", "Sabi", "Sabrina", "Sada", "Saturn", "Shauna", "Shauntal", "Serena", "Shelly", "Sidney", "Siebold", "Silver", "Skyla", "Steven", "Tabitha", "Tate and Liza", "Tierno", "Trace", "Trevor", "Tulip", "Turo", "Valerie", "Viola", "Volkner", "Volo", "Wallace", "Wally", "Wattson", "Whitney", "Wikstrom", "Will", "Winona", "Wulfric", "Xerosic", "Zinzolin"],
+    "Description":["Starter Pokemon", "Paradox", "Based On Real Animal", "Final Evolution", "Regional Form", "Legendary", "Ultra Beast", "Baby Pokemon", "Subtle Shiny", "First Route", "Victory Road","Monotype"],
+    "Type":["Normal", "Fire", "Water", "Electric", "Grass", "Ice", "Fighting", "Poison", "Ground", "Flying", "Psychic", "Bug", "Rock", "Ghost", "Dragon", "Dark", "Steel", "Fairy"]
+}
 
 bot = commands.Bot(command_prefix=config["commandPrefix"], intents=discord.Intents.all())
 
@@ -74,17 +82,26 @@ class User(BaseModel):
     shinyXpTimesHit = IntegerField(default=0)
     shinyXpEarned = IntegerField(default=0)
 
+class Challenge(BaseModel):
+    name = CharField()
+    timesRolled = IntegerField(default=0)
+    pointsAwarded = IntegerField(default=0)
+    description = CharField(default="")
+
 class Leaderboard(BaseModel):
     user = ForeignKeyField(User)
     pokemon = ForeignKeyField(Pokemon)
     points = IntegerField(default=1)
     date = DateField(default=date.today())
     image = CharField()
+    challenge = ForeignKeyField(Challenge,null=True)
 
-class Challenge(BaseModel):
-    name = CharField()
-    timesRolled = IntegerField()
-    pointsAwarded = IntegerField()
+class Week(BaseModel):
+    endDate = DateTimeField()
+    challenge = ForeignKeyField(Challenge)
+    challengeDesc = CharField()
+    pointsAwarded = IntegerField(default=0)
+    startedBy = ForeignKeyField(User)
 
 # --------------------------------------------------------- end of database stuff
 # --------------------------------------------------------- Xp and level stuff
@@ -301,6 +318,76 @@ async def leaderboard(ctx, date: str = 'None'):
     await ctx.send(embed=embed)
 
     mydb.close()
+
+@bot.command()
+async def weekly(ctx):
+    mydb.connect()
+    
+    try:
+        weekly = Week.select().order_by(Week.endDate.desc()).limit(1).get()
+        
+        if weekly.endDate < datetime.now():
+            print("end date is passed")
+            await ctx.send("Weekly has not been started yet! Starting a new one now!")
+            mydb.close()
+            embed = await startWeekly(ctx.author.id)
+        else:
+            print("weekly active")
+            mydb.close()
+            embed = await getWeeklyEmbed(weekly.id)
+    except Week.DoesNotExist as e:
+        print("error getting weekly")
+        await ctx.send("No Weekly found! Starting a new one")
+        mydb.close()
+        embed = await startWeekly(ctx.author.id)
+
+    
+    await ctx.send(embed=embed)
+
+async def getWeeklyEmbed(id) -> discord.Embed:
+    mydb.connect()
+
+    print("creating embed")
+    weekly = Week.get_by_id(id)
+    challenge = weekly.challenge
+
+    embed = discord.Embed(
+        title=f"This weeks challenge is {weekly.challengeDesc}",
+        description=challenge.description
+    )
+    embed.add_field(name="End Date",value=weekly.endDate)
+
+    member = await bot.get_guild(976929325406355477).fetch_member(weekly.startedBy)
+
+    embed.set_footer(text=f"Started by {member}")
+
+    mydb.close()
+
+    return embed
+
+async def startWeekly(user) -> discord.Embed:
+    mydb.connect()
+
+    today = datetime.today()
+    sunday =  today + timedelta((6-today.weekday()) % 7)
+    sunday = datetime.combine(sunday, datetime.max.time())
+
+    challenge = Challenge.select().order_by(fn.Rand()).limit(1).get()
+
+    match challenge.name:
+        case "Pokemon":
+            max = Pokemon.select().order_by(Pokemon.national.desc()).limit(1).get()
+            randomNumber = rand.randint(1,max)
+            challengeDesc = str(randomNumber)
+        case _:
+            challengeDesc = rand.choice(challengeDescriptions[challenge.name]["items"])
+
+    week = Week(endDate=sunday,challenge=challenge.id,challengeDesc=challengeDesc,startedBy=user)
+    week.save()
+
+    mydb.close()
+
+    return await getWeeklyEmbed(week.id)
 
 # --------------------------------------------------------- end of weekly and leaderboard stuff
 
