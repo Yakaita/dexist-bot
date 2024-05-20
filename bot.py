@@ -11,9 +11,7 @@ logger = logging.getLogger('peewee')
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
-#load the .env file
 load_dotenv()
-#load the config
 with open('config.json','r') as config_file: config = json.load(config_file)
 
 discordColors = {
@@ -29,8 +27,9 @@ discordColors = {
     'Pink':discord.Color.pink()
 }
 
-# setup bot
 bot = commands.Bot(command_prefix=config["commandPrefix"], intents=discord.Intents.all())
+
+# --------------------------------------------------------- Database stuff
 
 mydb = MySQLConnectorDatabase(
   "u491157569_dexist",
@@ -82,7 +81,12 @@ class Leaderboard(BaseModel):
     date = DateField(default=date.today())
     image = CharField()
 
+class Challenge(BaseModel):
+    name = CharField()
+    timesRolled = IntegerField()
+    pointsAwarded = IntegerField()
 
+# --------------------------------------------------------- end of database stuff
 # --------------------------------------------------------- Xp and level stuff
 async def xpForLevel(level: int) -> int:
     if level == 100: return 0
