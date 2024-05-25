@@ -327,28 +327,23 @@ async def weekly(ctx):
         weekly = Week.select().order_by(Week.endDate.desc()).limit(1).get()
         
         if weekly.endDate < datetime.now():
-            print("end date is passed")
             await ctx.send("Weekly has not been started yet! Starting a new one now!")
             mydb.close()
             embed = await startWeekly(ctx.author.id)
         else:
-            print("weekly active")
             mydb.close()
-            embed = await getWeeklyEmbed(weekly.id)
-    except Week.DoesNotExist as e:
-        print("error getting weekly")
+            embed = await getWeeklyEmbed()
+    except Week.DoesNotExist:
         await ctx.send("No Weekly found! Starting a new one")
         mydb.close()
         embed = await startWeekly(ctx.author.id)
 
-    
     await ctx.send(embed=embed)
 
-async def getWeeklyEmbed(id) -> discord.Embed:
+async def getWeeklyEmbed() -> discord.Embed:
     mydb.connect()
 
-    print("creating embed")
-    weekly = Week.get_by_id(id)
+    weekly = Week.select().order_by(Week.endDate.desc()).limit(1).get()
     challenge = weekly.challenge
 
     embed = discord.Embed(
@@ -377,6 +372,7 @@ async def startWeekly(user) -> discord.Embed:
     match challenge.name:
         case "Pokemon":
             max = Pokemon.select().order_by(Pokemon.national.desc()).limit(1).get()
+            max = max.national
             randomNumber = rand.randint(1,max)
             challengeDesc = str(randomNumber)
         case _:
