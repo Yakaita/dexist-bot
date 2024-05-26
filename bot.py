@@ -276,7 +276,7 @@ async def random(interaction: discord.Interaction):
     print("saying someting")
 
     card = await getPokemonCard('random')
-    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)))
+    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
 
 @bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)")
 @app_commands.describe(identity = "What Pokemon to look up")
@@ -287,7 +287,7 @@ async def pokedex(interaction: discord.Interaction, identity: str):
         await interaction.response.send_message(f"Error: {e}")
         return
 
-    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)))
+    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
 
 # --------------------------------------------------------- end of Pokemon stuff
 # --------------------------------------------------------- bot stuff
