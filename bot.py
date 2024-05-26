@@ -106,6 +106,41 @@ class Week(BaseModel):
     startedBy = ForeignKeyField(User)
 
 # --------------------------------------------------------- end of database stuff
+# --------------------------------------------------------- Views
+
+class PokedexButtons(discord.ui.View):
+    def __init__(self,id:int):
+        super().__init__()
+        self.id = id
+
+    @discord.ui.button(label="Previous",style=discord.ButtonStyle.blurple)
+    async def previous(self, interaction: discord.Interaction,button:discord.ui.Button):
+        if self.id == 1:
+            self.children[0].disabled = True
+            await interaction.response.edit_message(view=self)
+            return
+        mydb.connect()
+        identifier = Pokemon.get_by_id(self.id - 1).identity
+        print(identifier)
+        mydb.close()
+        embed = await getPokemonCard(identifier)
+        await interaction.response.edit_message(embed=embed,view=PokedexButtons(self.id - 1))
+
+    @discord.ui.button(label="Next",style=discord.ButtonStyle.blurple)
+    async def next(self,interaction: discord.Interaction, button:discord.ui.Button):
+        try:
+            mydb.connect()
+            pokemon = Pokemon.get_by_id(self.id + 1)
+            identifier = pokemon.identity
+            mydb.close()
+            embed = await getPokemonCard(identifier)
+            await interaction.response.edit_message(embed=embed,view=PokedexButtons(self.id + 1))
+        except Pokemon.DoesNotExist as e:
+            mydb.close()
+            self.children[1].disabled = True
+            await interaction.response.edit_message(view=self)
+
+# --------------------------------------------------------- end of Views
 # --------------------------------------------------------- Xp and level stuff
 async def xpForLevel(level: int) -> int:
     if level == 100: return 0
@@ -241,7 +276,7 @@ async def random(interaction: discord.Interaction):
     print("saying someting")
 
     card = await getPokemonCard('random')
-    await interaction.response.send_message(embed=card)
+    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)))
 
 @bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)")
 @app_commands.describe(identity = "What Pokemon to look up")
@@ -252,7 +287,7 @@ async def pokedex(interaction: discord.Interaction, identity: str):
         await interaction.response.send_message(f"Error: {e}")
         return
 
-    await interaction.response.send_message(embed=card)
+    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)))
 
 # --------------------------------------------------------- end of Pokemon stuff
 # --------------------------------------------------------- bot stuff
