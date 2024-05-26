@@ -158,17 +158,11 @@ async def levelUp(user: User):
     await channel.send(member.mention, embed = embed)
 
 @bot.tree.command(name="level",description="See the level of yourself or someone else")
-@app_commands.describe(display_name="The user to display, leave blank to check your own level")
-async def level(interaction: discord.Interaction, display_name: str = None):
+@app_commands.describe(member="The user to display, leave blank to check your own level")
+async def level(interaction: discord.Interaction, member: discord.User = None):
     mydb.connect()
     
-    if display_name:
-        member = discord.utils.get(interaction.guild.members, display_name=display_name)
-        if not member:
-            await interaction.response.send_message("Member not found.")
-            mydb.close()
-            return
-    else: member = interaction.user
+    if member == None: member = interaction.user
             
     user = User.get_by_id(member.id)
     embed = discord.Embed(
@@ -297,18 +291,18 @@ async def on_message(message):
 @bot.tree.command(name="leaderboard",description="Shows the leaderboard")
 @app_commands.describe(type="The time frame to use when looking up the leaderboard")
 @app_commands.describe(date="A date in year-month-day format. This will return the leaderboard for that week")
-async def leaderboard(interaction: discord.Interaction, type: Literal["This Week","All Time","Specific"],date: str = "None"):
+async def leaderboard(interaction: discord.Interaction, type: Literal["This Week","All Time","Specific"], date: str = "None"):
     mydb.connect()
 
     if type != 'All Time':
-        date = datetime.now() if type == 'This Week' else datetime.strptime(date,'%Y-%m-%d')
+        date = datetime.now() if type == 'This Week' else datetime.strptime(date,'%m-%d-%Y')
 
         monday_before = date - timedelta(days=date.weekday())
-        monday_after = date + timedelta(days=7-date.weekday())
+        sunday_after = date + timedelta(days=6-date.weekday())
 
-        timeframe = f"{monday_before} - {monday_after}"
+        timeframe = f"{monday_before.date()} - {sunday_after.date()}"
 
-        query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).where((Leaderboard.date >= monday_before) & (Leaderboard.date < monday_after)).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
+        query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).where((Leaderboard.date >= monday_before) & (Leaderboard.date < sunday_after)).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
     else:
         timeframe = "All Time"
         query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
