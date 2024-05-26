@@ -1,5 +1,7 @@
+from typing import Literal
 import discord.context_managers
 from discord.ext import commands
+from discord import app_commands
 from dotenv import load_dotenv
 from playhouse.mysql_ext import MySQLConnectorDatabase
 from peewee import *
@@ -155,17 +157,18 @@ async def levelUp(user: User):
 
     await channel.send(member.mention, embed = embed)
 
-@bot.command()
-async def level(ctx, display_name: str = None):
+@bot.tree.command(name="level",description="See the level of yourself or someone else")
+@app_commands.describe(display_name="The user to display, leave blank to check your own level")
+async def level(interaction: discord.Interaction, display_name: str = None):
     mydb.connect()
     
     if display_name:
-        member = discord.utils.get(ctx.guild.members, display_name=display_name)
+        member = discord.utils.get(interaction.guild.members, display_name=display_name)
         if not member:
-            await ctx.send("Member not found.")
+            await interaction.response.send_message("Member not found.")
             mydb.close()
             return
-    else: member = ctx.author
+    else: member = interaction.user
             
     user = User.get_by_id(member.id)
     embed = discord.Embed(
@@ -187,12 +190,8 @@ async def level(ctx, display_name: str = None):
         name = member.display_name,
         icon_url = member.avatar.url       
     )
-    embed.set_footer(
-        text = "Requested by " + ctx.author.display_name,
-        icon_url = ctx.author.avatar.url
-    )
 
-    await ctx.send(embed = embed)
+    await interaction.response.send_message(embed = embed)
 
     mydb.close()
 
@@ -245,27 +244,34 @@ async def getPokemonCard(identifier: str) -> discord.Embed:
 
     return embed
 
-@bot.command()
-async def random(ctx):
-    card = await getPokemonCard('random')
-    await ctx.send(embed=card)
+@bot.tree.command(name="random", description="Get the Pokedex page of a random Pokemon")
+async def random(interaction: discord.Interaction):
+    print("saying someting")
 
-@bot.command(aliases=["dex"])
-async def pokedex(ctx, identity: str):
+    card = await getPokemonCard('random')
+    await interaction.response.send_message(embed=card)
+
+@bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)")
+@app_commands.describe(identity = "What Pokemon to look up")
+async def pokedex(interaction: discord.Interaction, identity: str):
     try:
         card = await getPokemonCard(identity)
     except ValueError as e:
-        await ctx.send(f"Error: {e}")
+        await interaction.response.send_message(f"Error: {e}")
         return
 
-    await ctx.send(embed=card)
+    await interaction.response.send_message(embed=card)
 
 # --------------------------------------------------------- end of Pokemon stuff
 # --------------------------------------------------------- bot stuff
     
 @bot.event
 async def on_ready():
-    if config["sendOnReadyMessage"]: await bot.get_channel(config["onReadyMessageChannelId"]).send("Ready to shiny hunt!")
+    try:
+        synced = await bot.tree.sync()
+        print(f"synced {len(synced)} commands")
+    except Exception as e:
+        print(e)
 
 @bot.event
 async def on_message(message):
@@ -288,26 +294,31 @@ async def on_message(message):
 # --------------------------------------------------------- end of bot stuff
 # --------------------------------------------------------- weekly and leaderboard stuff
 
-@bot.command(aliases=["lb"])
-async def leaderboard(ctx, date: str = 'None'):
+@bot.tree.command(name="leaderboard",description="Shows the leaderboard")
+@app_commands.describe(type="The time frame to use when looking up the leaderboard")
+@app_commands.describe(date="A date in year-month-day format. This will return the leaderboard for that week")
+async def leaderboard(interaction: discord.Interaction, type: Literal["This Week","All Time","Specific"],date: str = "None"):
     mydb.connect()
 
-    if date != 'None':
-        date = datetime.now() if date == 'today' else datetime.strptime(date,'%Y-%m-%d')
+    if type != 'All Time':
+        date = datetime.now() if type == 'This Week' else datetime.strptime(date,'%Y-%m-%d')
 
         monday_before = date - timedelta(days=date.weekday())
         monday_after = date + timedelta(days=7-date.weekday())
 
+        timeframe = f"{monday_before} - {monday_after}"
+
         query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).where((Leaderboard.date >= monday_before) & (Leaderboard.date < monday_after)).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
     else:
+        timeframe = "All Time"
         query = Leaderboard.select(Leaderboard.user,fn.SUM(Leaderboard.points),User.id).join(User).group_by(Leaderboard.user).order_by(fn.SUM(Leaderboard.points).desc()).limit(5)
 
     users = []
 
-    users = [" - ".join([ctx.guild.get_member(user.user.id).display_name,str(user.points)]) for user in query]
+    users = [" - ".join([interaction.guild.get_member(user.user.id).display_name,str(user.points)]) for user in query]
 
     embed = discord.Embed(
-        title="Leaderboard (All Time)",
+        title=f"Leaderboard ({timeframe})",
         color=discordColors["Pink"]
     )
     embed.add_field(
@@ -315,30 +326,30 @@ async def leaderboard(ctx, date: str = 'None'):
         value="\n".join(users)
     )
 
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
     mydb.close()
 
-@bot.command()
-async def weekly(ctx):
+@bot.tree.command(name="weekly",description="Get the current weekly hunt")
+async def weekly(interaction: discord.Interaction):
     mydb.connect()
     
     try:
         weekly = Week.select().order_by(Week.endDate.desc()).limit(1).get()
         
         if weekly.endDate < datetime.now():
-            await ctx.send("Weekly has not been started yet! Starting a new one now!")
+            await interaction.response.send_message("Weekly has not been started yet! Starting a new one now!")
             mydb.close()
-            embed = await startWeekly(ctx.author.id)
+            embed = await startWeekly(interaction.user.id)
         else:
             mydb.close()
             embed = await getWeeklyEmbed()
     except Week.DoesNotExist:
-        await ctx.send("No Weekly found! Starting a new one")
+        await interaction.response.send_message("No Weekly found! Starting a new one")
         mydb.close()
-        embed = await startWeekly(ctx.author.id)
+        embed = await startWeekly(interaction.user.id)
 
-    await ctx.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 async def getWeeklyEmbed() -> discord.Embed:
     mydb.connect()
