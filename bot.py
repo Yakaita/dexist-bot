@@ -204,9 +204,7 @@ async def getPokemonCard(identifier: str) -> discord.Embed:
             pokemon = Pokemon.get(Pokemon.identity == identifier)
         except Pokemon.DoesNotExist:
             mydb.close()
-            raise ValueError(f"Pokemon with id {id} does not exist.")
-        except GamePokemon.DoesNotExist:
-            mydb.close()
+            raise ValueError(f"Pokemon with id {identifier} does not exist.")
         
     gamePokemon = GamePokemon.select(GamePokemon, Pokemon,Game).join(Pokemon).switch(GamePokemon).join(Game).where(Pokemon.id == pokemon.id)
     games = [gameLine.game.name for gameLine in gamePokemon]
