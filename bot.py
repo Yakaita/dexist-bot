@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import List, Literal
 import discord.context_managers
 from discord.ext import commands
 from discord import app_commands
@@ -106,72 +106,43 @@ class Week(BaseModel):
     pointsAwarded = IntegerField(default=0)
     startedBy = ForeignKeyField(User)
 
-@bot.tree.command(name="edit")
-async def edit(interaction: discord.Interaction):
+async def editable_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+
+    if interaction.namespace["to_edit"] == "Pokemon": editables = ["identity","name","national","color","isFemale","varient","type1","type2","generation","before","after"]
+    elif interaction.namespace["to_edit"] == "Game": editables = ["name","image","generation","spriteLocation"]
+    else: return []
+    return [app_commands.Choice(name = editable, value = editable) for editable in editables if current.lower() in editable.lower()]
+
+@bot.tree.command(name="edit", description="Edit part of the database. Must be a mod or higher to run this command")
+@app_commands.describe(to_edit="The thing to edit")
+@app_commands.describe(editable="The part to edit")
+@app_commands.autocomplete(editable = editable_autocomplete)
+@app_commands.describe(id="The id of the item")
+@app_commands.describe(new_data="The new data")
+async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game"],id:int,editable:str, new_data: str):
     allowed_roles = [1242248445184573553]
 
     user_roles = [role.id for role in interaction.user.roles]
     if not any(role in allowed_roles for role in user_roles):
         await interaction.response.send_message("You do not have permission to use this command!",ephemeral=True)
         return
+    
+    if to_edit == "Pokemon":
+        try:
+            mydb.connect()
+            pokemon = Pokemon.get_by_id(id)
+            #to do ask if they want to edit this pokemon then send a yes or no button set using the editPokemon method
+        except Pokemon.DoesNotExist as e:
+            await interaction.response.send_message("Im sorry but a Pokemon by that id does not exist! Please try again",ephemeral=True)
+            mydb.close()
+            return
 
-    await interaction.response.send_message(view=EditView(),ephemeral=True)
+async def editPokemon(interaction: discord.Interaction, pokemon: Pokemon, attribute: str, newValue: str):
+    pass
+
 
 # --------------------------------------------------------- end of database stuff
 # --------------------------------------------------------- Views
-
-class EditDropdown(discord.ui.Select):
-    def __init__(self):
-        options=[
-            discord.SelectOption(label="Pokemon",description="Edit the info of a Pokemon")
-        ]
-        super().__init__(placeholder="What do you want to edit",options=options)
-
-    async def callback(self,interaction: discord.Interaction):
-        if self.values[0] == "Pokemon":
-            print("Pokemon selected")
-            await interaction.response.send_modal(EditPokemon())
-
-class EditView(discord.ui.View):
-    def __init__(self):
-        super().__init__()
-        self.add_item(EditDropdown())
-
-class EditPokemon(discord.ui.Modal, title = "Edit Pokemon"):
-    identity = discord.ui.TextInput(label="Identity",required=False)
-    name = discord.ui.TextInput(label="Name",required=False)
-    national = discord.ui.TextInput(label="National",required=False)
-    color = discord.ui.TextInput(label="Color",required=False)
-    isFemale = discord.ui.TextInput(label="Is Female",required=False)
-    # varient = discord.ui.TextInput(label="Varient",required=False)
-    # type1 = discord.ui.TextInput(label="Type 1",required=False)
-    # type2 = discord.ui.TextInput(label="Type 2",required=False)
-    # generation = discord.ui.TextInput(label="Generation",required=False)
-    # before = discord.ui.TextInput(label="Before",required=False)
-    # after = discord.ui.TextInput(label="After",required=False)
-    
-    def __init__(self, id:int):
-        super().__init__()
-        self.id = id
-        
-        mydb.connect()
-        pokemon = Pokemon.get_by_id(self.id)
-        mydb.close()
-
-        self.identity.default = pokemon.identity
-        self.name.default = pokemon.name
-        self.national.default = pokemon.national
-        self.color.default = pokemon.color
-        self.isFemale.default = pokemon.isFemale
-        # self.varient.default = pokemon.varient
-        # self.type1.default = pokemon.type1
-        # self.type2.default = pokemon.type2
-        # self.generation.default = pokemon.generation
-        # self.before.default = pokemon.before
-        # self.after.default = pokemon.after
-
-    async def on_submit(self,interaction: discord.Interaction):
-        pass
 
 class PokedexButtons(discord.ui.View):
     def __init__(self,id:int):
@@ -204,19 +175,6 @@ class PokedexButtons(discord.ui.View):
             mydb.close()
             self.children[1].disabled = True
             await interaction.response.edit_message(view=self)
-
-    @discord.ui.button(label="Edit", style=discord.ButtonStyle.danger)
-    async def edit(self, interaction: discord.Interaction,button: discord.ui.Button):
-        allowed_roles = [1242248445184573553]
-
-        user_roles = [role.id for role in interaction.user.roles]
-        if not any(role in allowed_roles for role in user_roles):
-            self.children[2].disabled = True
-            await interaction.response.edit_message(view=self)
-            await interaction.response.send_message("You do not have permission to edit!",ephemeral=True)
-            return
-        
-        await interaction.response.send_modal(EditPokemon(int(interaction.message.embeds[0].footer.text)))
 
 
 # --------------------------------------------------------- end of Views
@@ -402,7 +360,7 @@ async def on_message(message):
 
 @bot.tree.command(name="leaderboard",description="Shows the leaderboard")
 @app_commands.describe(type="The time frame to use when looking up the leaderboard")
-@app_commands.describe(date="A date in year-month-day format. This will return the leaderboard for that week")
+@app_commands.describe(date="A date in mm-dd-yyyy format. This will return the leaderboard for that week")
 async def leaderboard(interaction: discord.Interaction, type: Literal["This Week","All Time","Specific"], date: str = "None"):
     mydb.connect()
 
