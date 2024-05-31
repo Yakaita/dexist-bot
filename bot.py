@@ -120,16 +120,17 @@ async def field_autocomplete(interaction: discord.Interaction, current: str) -> 
 @app_commands.describe(id="The id of the item")
 @app_commands.describe(new_data="The new data")
 async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game"],id:int,field:str, new_data: str):
-
-    if field.lower() == "id": 
-        await interaction.response.send_message("You cannot edit the ID!")
-        return
+    print(f"{interaction.user.display_name} ran /edit {to_edit} {id} {field} {new_data}")
 
     allowed_roles = [1242248445184573553]
 
     user_roles = [role.id for role in interaction.user.roles]
     if not any(role in allowed_roles for role in user_roles):
         await interaction.response.send_message("You do not have permission to use this command!",ephemeral=True)
+        return
+
+    if field.lower() == "id": 
+        await interaction.response.send_message("You cannot edit the ID!",ephemeral=True)
         return
     
     if to_edit == "Pokemon":
@@ -282,6 +283,8 @@ async def levelUp(user: User):
 @bot.tree.command(name="level",description="See the level of yourself or someone else")
 @app_commands.describe(member="The user to display, leave blank to check your own level")
 async def level(interaction: discord.Interaction, member: discord.User = None):
+    print(f"{interaction.user.display_name} ran /level {member.name if member != None else ""}")
+
     mydb.connect()
     
     if member == None: member = interaction.user
@@ -307,7 +310,7 @@ async def level(interaction: discord.Interaction, member: discord.User = None):
         icon_url = member.avatar.url       
     )
 
-    await interaction.response.send_message(embed = embed)
+    await interaction.response.send_message(embed = embed,ephemeral=True)
 
     mydb.close()
 
@@ -360,7 +363,7 @@ async def getPokemonCard(identifier: str) -> discord.Embed:
 
 @bot.tree.command(name="random", description="Get the Pokedex page of a random Pokemon")
 async def random(interaction: discord.Interaction):
-    print("saying someting")
+    print(f"{interaction.user.display_name} ran /random")
 
     card = await getPokemonCard('random')
     await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
@@ -368,10 +371,13 @@ async def random(interaction: discord.Interaction):
 @bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)")
 @app_commands.describe(identity = "What Pokemon to look up")
 async def pokedex(interaction: discord.Interaction, identity: str):
+    print(f"{interaction.user.display_name} ran /pokedex {identity}")
+    
     try:
         card = await getPokemonCard(identity)
     except ValueError as e:
-        await interaction.response.send_message(f"Error: {e}")
+        await interaction.response.send_message(f"Error: {e}",ephemeral=True)
+        print(f"Error: {e}")
         return
 
     await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
@@ -412,6 +418,8 @@ async def on_message(message):
 @app_commands.describe(type="The time frame to use when looking up the leaderboard")
 @app_commands.describe(date="A date in mm-dd-yyyy format. This will return the leaderboard for that week")
 async def leaderboard(interaction: discord.Interaction, type: Literal["This Week","All Time","Specific"], date: str = "None"):
+    print(f"{interaction.user.display_name} ran /leaderboard {type} {date}")
+
     mydb.connect()
 
     if type != 'All Time':
@@ -440,30 +448,31 @@ async def leaderboard(interaction: discord.Interaction, type: Literal["This Week
         value="\n".join(users)
     )
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed,ephemeral=True)
 
     mydb.close()
 
 @bot.tree.command(name="weekly",description="Get the current weekly hunt")
 async def weekly(interaction: discord.Interaction):
+    print(f"{interaction.user.display_name} ran /weekly")
     mydb.connect()
     
     try:
         weekly = Week.select().order_by(Week.endDate.desc()).limit(1).get()
         
         if weekly.endDate < datetime.now():
-            await interaction.response.send_message("Weekly has not been started yet! Starting a new one now!")
+            await interaction.response.send_message("Weekly has not been started yet! Starting a new one now!",ephemeral=True)
             mydb.close()
             embed = await startWeekly(interaction.user.id)
         else:
             mydb.close()
             embed = await getWeeklyEmbed()
     except Week.DoesNotExist:
-        await interaction.response.send_message("No Weekly found! Starting a new one")
+        await interaction.response.send_message("No Weekly found! Starting a new one",ephemeral=True)
         mydb.close()
         embed = await startWeekly(interaction.user.id)
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed,ephemeral=True)
 
 async def getWeeklyEmbed() -> discord.Embed:
     mydb.connect()
