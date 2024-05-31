@@ -145,7 +145,7 @@ async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game
             mydb.close()
             return
 
-async def edit_database_object(interaction: discord.Interaction, object, attribute: str, new_value:str):
+async def edit_database_object(object, attribute: str, new_value:str):
     try:
         mydb.connect()
         old_value = getattr(object,attribute)
@@ -160,13 +160,8 @@ async def edit_database_object(interaction: discord.Interaction, object, attribu
         setattr(object,attribute,new_value)
 
         object.save()
-
-        if attribute == "isFemale":
-                    new_value = "False" if new_value == 0 else "True"
-                    
-        await interaction.response.send_message(f"Changed {attribute} from {old_value} to {new_value}!",ephemeral=True)
     except Exception as e:
-        await interaction.response.send_message(f"Something went wrong, nothing changed! {e}",ephemeral=True)
+        raise
     finally:
         mydb.close()
     
@@ -185,7 +180,18 @@ class YesCancelButtons(discord.ui.View):
 
     @discord.ui.button(label="Yes",style=discord.ButtonStyle.green)
     async def yes(self,interaction:discord.Interaction,button:discord.ui.Button):
-        await edit_database_object(interaction,self.object,self.attribute,self.new_value)
+        try:
+            old_value = getattr(self.object,self.attribute)
+
+            await edit_database_object(self.object,self.attribute,self.new_value)
+            await interaction.response.send_message(f"Changed {self.attribute} from {old_value} to {self.new_value}!",ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"Something went wrong, nothing changed! {e}",ephemeral=True)
+            return
+
+    @discord.ui.button(label="Cancel",style=discord.ButtonStyle.red)
+    async def cancel(self, interaction:discord.Interaction,button:discord.ui.Button):
+        await interaction.response.edit_message(content="Canceled edit.",view=None,embed=None)
 
 
 class PokedexButtons(discord.ui.View):
