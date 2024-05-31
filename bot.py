@@ -106,20 +106,25 @@ class Week(BaseModel):
     pointsAwarded = IntegerField(default=0)
     startedBy = ForeignKeyField(User)
 
-async def editable_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+async def field_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
 
-    if interaction.namespace["to_edit"] == "Pokemon": editables = ["identity","name","national","color","isFemale","varient","type1","type2","generation","before","after"]
-    elif interaction.namespace["to_edit"] == "Game": editables = ["name","image","generation","spriteLocation"]
+    if interaction.namespace["to_edit"] == "Pokemon": fields = ["identity","name","national","color","isFemale","varient","type1","type2","generation","before","after"]
+    elif interaction.namespace["to_edit"] == "Game": fields = ["name","image","generation","spriteLocation"]
     else: return []
-    return [app_commands.Choice(name = editable, value = editable) for editable in editables if current.lower() in editable.lower()]
+    return [app_commands.Choice(name = field, value = field) for field in fields if current.lower() in field.lower()]
 
 @bot.tree.command(name="edit", description="Edit part of the database. Must be a mod or higher to run this command")
 @app_commands.describe(to_edit="The thing to edit")
-@app_commands.describe(editable="The part to edit")
-@app_commands.autocomplete(editable = editable_autocomplete)
+@app_commands.describe(field="The part to edit")
+@app_commands.autocomplete(field = field_autocomplete)
 @app_commands.describe(id="The id of the item")
 @app_commands.describe(new_data="The new data")
-async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game"],id:int,editable:str, new_data: str):
+async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game"],id:int,field:str, new_data: str):
+
+    if field.lower() == "id": 
+        await interaction.response.send_message("You cannot edit the ID!")
+        return
+
     allowed_roles = [1242248445184573553]
 
     user_roles = [role.id for role in interaction.user.roles]
@@ -131,18 +136,57 @@ async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game
         try:
             mydb.connect()
             pokemon = Pokemon.get_by_id(id)
-            #to do ask if they want to edit this pokemon then send a yes or no button set using the editPokemon method
+            mydb.close()
+            embed = await getPokemonCard(pokemon.identity)
+            await interaction.response.send_message("Are you sure you want to edit this Pokemon?",embed=embed,view=YesCancelButtons(pokemon,field,new_data),ephemeral=True)
+            
         except Pokemon.DoesNotExist as e:
             await interaction.response.send_message("Im sorry but a Pokemon by that id does not exist! Please try again",ephemeral=True)
             mydb.close()
             return
 
-async def editPokemon(interaction: discord.Interaction, pokemon: Pokemon, attribute: str, newValue: str):
-    pass
+async def edit_database_object(interaction: discord.Interaction, object, attribute: str, new_value:str):
+    try:
+        mydb.connect()
+        old_value = getattr(object,attribute)
+        attribute_type = type(old_value)
+
+        if attribute == "isFemale":
+                    new_value = 0 if new_value.lower() == "false" else 1
+
+        if attribute_type == int:
+            new_value = int(new_value)
+        
+        setattr(object,attribute,new_value)
+
+        object.save()
+
+        if attribute == "isFemale":
+                    new_value = "False" if new_value == 0 else "True"
+                    
+        await interaction.response.send_message(f"Changed {attribute} from {old_value} to {new_value}!",ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Something went wrong, nothing changed! {e}",ephemeral=True)
+    finally:
+        mydb.close()
+    
 
 
 # --------------------------------------------------------- end of database stuff
 # --------------------------------------------------------- Views
+
+class YesCancelButtons(discord.ui.View):
+    def __init__(self,object,attribute:str,new_value:str):
+        super().__init__()
+        self.object = object
+        self.attribute = attribute
+        self.new_value = new_value
+
+
+    @discord.ui.button(label="Yes",style=discord.ButtonStyle.green)
+    async def yes(self,interaction:discord.Interaction,button:discord.ui.Button):
+        await edit_database_object(interaction,self.object,self.attribute,self.new_value)
+
 
 class PokedexButtons(discord.ui.View):
     def __init__(self,id:int):
