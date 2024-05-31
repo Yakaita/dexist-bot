@@ -107,11 +107,18 @@ class Week(BaseModel):
     startedBy = ForeignKeyField(User)
 
 async def field_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
-
     if interaction.namespace["to_edit"] == "Pokemon": fields = ["identity","name","national","color","isFemale","varient","type1","type2","generation","before","after"]
     elif interaction.namespace["to_edit"] == "Game": fields = ["name","image","generation","spriteLocation"]
     else: return []
     return [app_commands.Choice(name = field, value = field) for field in fields if current.lower() in field.lower()]
+
+async def new_data_autocomplete(interaction: discord.Interaction, current:str) -> List[app_commands.Choice[str]]:
+    if interaction.namespace["field"] == "color": data = ["red","blue","yellow","green","black","brown","purple","gray","white","pink"]
+    elif interaction.namespace["field"] == "isFemale": data = ["true","false"]
+    elif interaction.namespace["field"] == "type1" or interaction.namespace["field"] == "type2": data = ["normal","fire","water","electric","grass","ice","fighting","poison","ground","flying","psychic","bug","rock","ghost","dragon","dark","steel","fairy","n/a"]
+    elif interaction.namespace["field"] == "generation": data = ["1","2","3","4","5","6","7","8","9"]
+    else: return []
+    return [app_commands.Choice(name = field, value = field) for field in data if current.lower() in field.lower()]
 
 @bot.tree.command(name="edit", description="Edit part of the database. Must be a mod or higher to run this command")
 @app_commands.describe(to_edit="The thing to edit")
@@ -119,7 +126,8 @@ async def field_autocomplete(interaction: discord.Interaction, current: str) -> 
 @app_commands.autocomplete(field = field_autocomplete)
 @app_commands.describe(id="The id of the item")
 @app_commands.describe(new_data="The new data")
-async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Game"],id:int,field:str, new_data: str):
+@app_commands.autocomplete(new_data = new_data_autocomplete)
+async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon"],id:int,field:str, new_data: str):
     print(f"{interaction.user.display_name} ran /edit {to_edit} {id} {field} {new_data}")
 
     allowed_roles = [1242248445184573553]
