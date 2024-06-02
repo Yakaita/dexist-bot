@@ -339,13 +339,41 @@ class PokedexButtons(discord.ui.View):
 
 # --------------------------------------------------------- end of Views
 # --------------------------------------------------------- Xp and level stuff
+
+@bot.tree.command(name="award_xp",description="Awards xp to a user. Must be mod+ to run this command")
+@app_commands.describe(user="The discord user to add the xp to.")
+@app_commands.describe(amount="The amount of xp to add, defaults to 1 if not given a value")
+async def award_xp(interaction: discord.Interaction, user: discord.User,amount: int = 1):
+    print(f"{interaction.user.display_name} ran /award_xp {user.name} {amount}")
+
+    allowed_roles = [1242248445184573553]
+
+    user_roles = [role.id for role in interaction.user.roles]
+    if not any(role in allowed_roles for role in user_roles):
+        await interaction.response.send_message("You do not have permission to use this command!",ephemeral=True)
+        return
+    
+    try:
+        mydb.connect()
+        table_user = User.get_by_id(user.id)
+        worked = addXP(amount=amount,user=table_user,canHitOdds=True)
+
+        if worked:
+            interaction.response.send_message(f"Added {amount} xp to {user.name}",ephemeral=True)
+        else:
+            interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
+    except Exception as e:
+        interaction.response.send_message(f"Failed to award xp: {e}",ephemeral=True)
+    finally:
+        mydb.close()
+
 async def xpForLevel(level: int) -> int:
     if level == 100: return 0
 
     if level <= 5: return math.floor(4 * level**3 / 5 + 30)
     else: return math.floor(4 * level**3 / 5)
 
-async def addXP(amount: int, user: User, canHitOdds: bool = True):
+async def addXP(amount: int, user: User, canHitOdds: bool = True) -> bool:
     if user.level == 100: return False
 
     randomNum = rand.randint(1,8192)
@@ -370,6 +398,8 @@ async def addXP(amount: int, user: User, canHitOdds: bool = True):
     else: 
         query = User.update(xp = User.xp + amount).where(User.id == user.id)
         query.execute()
+
+    return True
 
 async def levelUp(user: User):
     query = User.update(level = User.level + 1, xp = 0).where(User.id == user.id)
