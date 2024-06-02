@@ -29,6 +29,42 @@ discordColors = {
     'White':discord.Color.light_embed(),
     'Pink':discord.Color.pink()
 }
+
+pokemon_colors = Literal[
+    "Red",
+    "Blue",
+    "Yellow",
+    "Green",
+    "Black",
+    "Brown",
+    "Purple",
+    "Gray",
+    "White",
+    "Pink"
+]
+
+pokemon_types = Literal[
+    "Normal",
+    "Fire",
+    "Water",
+    "Electric",
+    "Grass",
+    "Ice",
+    "Fighting",
+    "Poison",
+    "Ground",
+    "Flying",
+    "Psychic",
+    "Bug",
+    "Rock",
+    "Ghost",
+    "Dragon",
+    "Dark",
+    "Steel",
+    "Fairy",
+    "N/A"
+]
+
 challengeDescriptions = {
     "Color":["Red", "Blue", "Yellow", "Green", "Black", "Brown", "Purple", "Gray", "White", "Pink"],
     "Generation":"123456789",
@@ -173,6 +209,65 @@ async def edit_database_object(object, attribute: str, new_value:str):
         raise
     finally:
         mydb.close()
+
+@bot.tree.command(name="add_pokemon",description="Add a Pokemon to the database. Only mods+ can run this command")
+@app_commands.describe(identity="The identity of the Pokemon, [n#]-[varient if any]-[f if female]")
+@app_commands.describe(name="The species name of the Pokemon. Does not include any identifiers. Raichu and Alolan Raichu are both named \"Raichu\"")
+@app_commands.describe(national="The national Pokedex number of the species.")
+@app_commands.describe(color="The color in the Pokedex")
+@app_commands.describe(isfemale="Where the Pokemon is the female varient (has -f in the indentity)")
+@app_commands.describe(varient="The varient of the Pokemon. Alolan or Galarian instead of alola or galar. This should be part of the identity as well")
+@app_commands.describe(type1="The first type of the Pokemon, should not be n/a")
+@app_commands.describe(type2="The second type of the Pokemon. use N/A if it is monotype")
+@app_commands.describe(generation="The generation of the Pokemon. Will default to the most recent generation")
+@app_commands.describe(before="The id of the Pokemon that comes before this one. Mostly used for new varients that should be next to their counterparts in the Pokedex")
+@app_commands.describe(after="The id of the Pokemon that comes after this one. Mostly used for new varients that should be next to their counterparts in the Pokedex")
+async def add_pokemon(interaction: discord.Interaction, identity:str, name:str, isfemale: bool = False, national:int = 0, color:pokemon_colors = "White", varient:str = "", type1:pokemon_types = "N/A",type2:pokemon_types = "N/A",generation:int = 9, before:int=None,after:int=None):
+    print(f"{interaction.user.display_name} ran /add_pokemon {identity} {name} {national} {color} {isfemale} {varient} {type1} {type2} {generation} {before} {after}")
+
+    allowed_roles = [1242248445184573553]
+
+    user_roles = [role.id for role in interaction.user.roles]
+    if not any(role in allowed_roles for role in user_roles):
+        await interaction.response.send_message("You do not have permission to use this command!",ephemeral=True)
+        return
+    
+    try:
+        mydb.connect()
+
+        test = Pokemon.get(Pokemon.identity == identity)
+
+        await interaction.response.send_message(f"A Pokemon with that identifier already exists! Please use /Pokedex {identity} to see it",ephemeral=True)
+        return
+    except Pokemon.DoesNotExist:
+        pass
+    finally:
+        mydb.close()
+    
+    try:
+        mydb.connect()
+
+        new_pokemon = Pokemon(identity=identity,name=name,isFemale=isfemale,national=national,color=color,varient=varient,type1=type1,type2=type2,generation=generation,before=before,after=after)
+
+        new_pokemon.save()
+
+        if before != None:
+            before_pokemon = Pokemon.get_by_id(before)
+            before_pokemon.after = new_pokemon.id
+            before_pokemon.save()
+
+        if after != None:
+            after_pokemon = Pokemon.get_by_id(after)
+            after_pokemon.before = new_pokemon.id
+            after_pokemon.save()
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to add Pokemon: {e}",ephemeral=True)
+        return
+    finally:
+        mydb.close()
+
+    card = await getPokemonCard(new_pokemon.identity)
+    await interaction.response.send_message(f"{new_pokemon.identity} added with id of {new_pokemon.id}", embed=card,ephemeral=True,view=PokedexButtons(new_pokemon.id))
     
 
 
@@ -216,7 +311,6 @@ class PokedexButtons(discord.ui.View):
             return
         mydb.connect()
         identifier = Pokemon.get_by_id(self.id - 1).identity
-        print(identifier)
         mydb.close()
         embed = await getPokemonCard(identifier)
         await interaction.response.edit_message(embed=embed,view=PokedexButtons(self.id - 1))
