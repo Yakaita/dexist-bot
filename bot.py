@@ -310,20 +310,27 @@ class PokedexButtons(discord.ui.View):
             await interaction.response.edit_message(view=self)
             return
         mydb.connect()
-        identifier = Pokemon.get_by_id(self.id - 1).identity
+        pokemon = Pokemon.get_by_id(self.id)
+        
+        id = pokemon.before if pokemon.before != None else self.id - 1
+
+        new_identifier = Pokemon.get_by_id(id).identity
         mydb.close()
-        embed = await getPokemonCard(identifier)
-        await interaction.response.edit_message(embed=embed,view=PokedexButtons(self.id - 1))
+        embed = await getPokemonCard(new_identifier)
+        await interaction.response.edit_message(embed=embed,view=PokedexButtons(id))
 
     @discord.ui.button(label="Next",style=discord.ButtonStyle.blurple)
     async def next(self,interaction: discord.Interaction, button:discord.ui.Button):
         try:
             mydb.connect()
-            pokemon = Pokemon.get_by_id(self.id + 1)
-            identifier = pokemon.identity
+            pokemon = Pokemon.get_by_id(self.id)
+            
+            id = pokemon.after if pokemon.after != None else self.id + 1
+
+            new_identifier = Pokemon.get_by_id(id).identity
             mydb.close()
-            embed = await getPokemonCard(identifier)
-            await interaction.response.edit_message(embed=embed,view=PokedexButtons(self.id + 1))
+            embed = await getPokemonCard(new_identifier)
+            await interaction.response.edit_message(embed=embed,view=PokedexButtons(id))
         except Pokemon.DoesNotExist as e:
             mydb.close()
             self.children[1].disabled = True
