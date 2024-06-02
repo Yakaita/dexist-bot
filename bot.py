@@ -76,6 +76,9 @@ challengeDescriptions = {
 
 bot = commands.Bot(command_prefix=config["commandPrefix"], intents=discord.Intents.all())
 
+
+GUILD = bot.get_guild(976929325406355477)
+
 # --------------------------------------------------------- Database stuff
 
 mydb = MySQLConnectorDatabase(
@@ -156,7 +159,7 @@ async def new_data_autocomplete(interaction: discord.Interaction, current:str) -
     else: return []
     return [app_commands.Choice(name = field, value = field) for field in data if current.lower() in field.lower()]
 
-@bot.tree.command(name="edit", description="Edit part of the database. Must be a mod or higher to run this command")
+@bot.tree.command(name="edit", description="Edit part of the database. Must be a mod or higher to run this command",guild=GUILD)
 @app_commands.describe(to_edit="The thing to edit")
 @app_commands.describe(field="The part to edit")
 @app_commands.autocomplete(field = field_autocomplete)
@@ -210,7 +213,7 @@ async def edit_database_object(object, attribute: str, new_value:str):
     finally:
         mydb.close()
 
-@bot.tree.command(name="add_pokemon",description="Add a Pokemon to the database. Only mods+ can run this command")
+@bot.tree.command(name="add_pokemon",description="Add a Pokemon to the database. Only mods+ can run this command",guild=GUILD)
 @app_commands.describe(identity="The identity of the Pokemon, [n#]-[varient if any]-[f if female]")
 @app_commands.describe(name="The species name of the Pokemon. Does not include any identifiers. Raichu and Alolan Raichu are both named \"Raichu\"")
 @app_commands.describe(national="The national Pokedex number of the species.")
@@ -340,32 +343,7 @@ class PokedexButtons(discord.ui.View):
 # --------------------------------------------------------- end of Views
 # --------------------------------------------------------- Xp and level stuff
 
-@bot.tree.command(name="award_xp",description="Awards xp to a user. Must be mod+ to run this command")
-@app_commands.describe(user="The discord user to add the xp to.")
-@app_commands.describe(amount="The amount of xp to add, defaults to 1 if not given a value")
-async def award_xp(interaction: discord.Interaction, user: discord.User,amount: int = 1):
-    print(f"{interaction.user.display_name} ran /award_xp {user.name} {amount}")
 
-    allowed_roles = [1242248445184573553]
-
-    user_roles = [role.id for role in interaction.user.roles]
-    if not any(role in allowed_roles for role in user_roles):
-        await interaction.response.send_message("You do not have permission to use this command!",ephemeral=True)
-        return
-    
-    try:
-        mydb.connect()
-        table_user = User.get_by_id(user.id)
-        worked = addXP(amount=amount,user=table_user,canHitOdds=True)
-
-        if worked:
-            interaction.response.send_message(f"Added {amount} xp to {user.name}",ephemeral=True)
-        else:
-            interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
-    except Exception as e:
-        interaction.response.send_message(f"Failed to award xp: {e}",ephemeral=True)
-    finally:
-        mydb.close()
 
 async def xpForLevel(level: int) -> int:
     if level == 100: return 0
@@ -419,7 +397,7 @@ async def levelUp(user: User):
 
     await channel.send(member.mention, embed = embed)
 
-@bot.tree.command(name="level",description="See the level of yourself or someone else")
+@bot.tree.command(name="level",description="See the level of yourself or someone else",guild=GUILD)
 @app_commands.describe(member="The user to display, leave blank to check your own level")
 async def level(interaction: discord.Interaction, member: discord.User = None):
     print(f"{interaction.user.display_name} ran /level {member.name if member != None else ""}")
@@ -452,6 +430,34 @@ async def level(interaction: discord.Interaction, member: discord.User = None):
     await interaction.response.send_message(embed = embed,ephemeral=True)
 
     mydb.close()
+
+
+@bot.tree.command(name="award_xp",description="Awards xp to a user. Must be mod+ to run this command",guild=GUILD)
+@app_commands.describe(user="The discord user to add the xp to.")
+@app_commands.describe(amount="The amount of xp to add, defaults to 1 if not given a value")
+async def award_xp(interaction: discord.Interaction, user: discord.User,amount: int = 1):
+    print(f"{interaction.user.display_name} ran /award_xp {user.name} {amount}")
+
+    allowed_roles = [1242248445184573553]
+
+    user_roles = [role.id for role in interaction.user.roles]
+    if not any(role in allowed_roles for role in user_roles):
+        await interaction.response.send_message("You do not have permission to use this command!",ephemeral=True)
+        return
+    
+    try:
+        mydb.connect()
+        table_user = User.get_by_id(user.id)
+        worked = addXP(amount=amount,user=table_user,canHitOdds=True)
+
+        if worked:
+            interaction.response.send_message(f"Added {amount} xp to {user.name}",ephemeral=True)
+        else:
+            interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
+    except Exception as e:
+        interaction.response.send_message(f"Failed to award xp: {e}",ephemeral=True)
+    finally:
+        mydb.close()
 
 # --------------------------------------------------------- end of xp / level stuff
 # --------------------------------------------------------- Pokemon stuff
@@ -500,14 +506,14 @@ async def getPokemonCard(identifier: str) -> discord.Embed:
 
     return embed
 
-@bot.tree.command(name="random", description="Get the Pokedex page of a random Pokemon")
+@bot.tree.command(name="random", description="Get the Pokedex page of a random Pokemon",guild=GUILD)
 async def random(interaction: discord.Interaction):
     print(f"{interaction.user.display_name} ran /random")
 
     card = await getPokemonCard('random')
     await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
 
-@bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)")
+@bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)",guild=GUILD)
 @app_commands.describe(identity = "What Pokemon to look up")
 async def pokedex(interaction: discord.Interaction, identity: str):
     print(f"{interaction.user.display_name} ran /pokedex {identity}")
@@ -528,6 +534,7 @@ async def pokedex(interaction: discord.Interaction, identity: str):
 async def on_ready():
     try:
         synced = await bot.tree.sync()
+        for command in synced: print(f"synced {command.name}")
         print(f"synced {len(synced)} commands")
     except Exception as e:
         print(e)
@@ -553,7 +560,7 @@ async def on_message(message):
 # --------------------------------------------------------- end of bot stuff
 # --------------------------------------------------------- weekly and leaderboard stuff
 
-@bot.tree.command(name="leaderboard",description="Shows the leaderboard")
+@bot.tree.command(name="leaderboard",description="Shows the leaderboard",guild=GUILD)
 @app_commands.describe(type="The time frame to use when looking up the leaderboard")
 @app_commands.describe(date="A date in mm-dd-yyyy format. This will return the leaderboard for that week")
 async def leaderboard(interaction: discord.Interaction, type: Literal["This Week","All Time","Specific"], date: str = "None"):
@@ -591,7 +598,7 @@ async def leaderboard(interaction: discord.Interaction, type: Literal["This Week
 
     mydb.close()
 
-@bot.tree.command(name="weekly",description="Get the current weekly hunt")
+@bot.tree.command(name="weekly",description="Get the current weekly hunt",guild=GUILD)
 async def weekly(interaction: discord.Interaction):
     print(f"{interaction.user.display_name} ran /weekly")
     mydb.connect()
