@@ -448,14 +448,14 @@ async def award_xp(interaction: discord.Interaction, user: discord.User,amount: 
     try:
         mydb.connect()
         table_user = User.get_by_id(user.id)
-        worked = addXP(amount=amount,user=table_user,canHitOdds=True)
+        worked = await addXP(amount=amount,user=table_user,canHitOdds=True)
 
         if worked:
-            interaction.response.send_message(f"Added {amount} xp to {user.name}",ephemeral=True)
+            await interaction.response.send_message(f"Awarded {amount} xp to {user.name}",ephemeral=True)
         else:
-            interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
+            await interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
     except Exception as e:
-        interaction.response.send_message(f"Failed to award xp: {e}",ephemeral=True)
+        await interaction.response.send_message(f"Failed to award xp: {e}",ephemeral=True)
     finally:
         mydb.close()
 
