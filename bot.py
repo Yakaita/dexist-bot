@@ -82,18 +82,16 @@ GUILD = bot.get_guild(976929325406355477)
 
 # --------------------------------------------------------- Database stuff
 
-
-
 async def field_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
     if interaction.namespace["to_edit"] == "Pokemon": fields = ["identity","name","national","color","isFemale","varient","type1","type2","generation","before","after"]
-    elif interaction.namespace["to_edit"] == "Game": fields = ["name","image","generation","spriteLocation"]
+    elif interaction.namespace["to_edit"] == "Challenge": fields = ["name","description"]
     else: return []
     return [app_commands.Choice(name = field, value = field) for field in fields if current.lower() in field.lower()]
 
 async def new_data_autocomplete(interaction: discord.Interaction, current:str) -> List[app_commands.Choice[str]]:
-    if interaction.namespace["field"] == "color": data = ["red","blue","yellow","green","black","brown","purple","gray","white","pink"]
+    if interaction.namespace["field"] == "color": data = pokemon_colors
     elif interaction.namespace["field"] == "isFemale": data = ["true","false"]
-    elif interaction.namespace["field"] == "type1" or interaction.namespace["field"] == "type2": data = ["normal","fire","water","electric","grass","ice","fighting","poison","ground","flying","psychic","bug","rock","ghost","dragon","dark","steel","fairy","n/a"]
+    elif interaction.namespace["field"] == "type1" or interaction.namespace["field"] == "type2": data = pokemon_types
     elif interaction.namespace["field"] == "generation": data = ["1","2","3","4","5","6","7","8","9"]
     else: return []
     return [app_commands.Choice(name = field, value = field) for field in data if current.lower() in field.lower()]
@@ -105,7 +103,7 @@ async def new_data_autocomplete(interaction: discord.Interaction, current:str) -
 @app_commands.describe(id="The id of the item")
 @app_commands.describe(new_data="The new data")
 @app_commands.autocomplete(new_data = new_data_autocomplete)
-async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon"],id:int,field:str, new_data: str):
+async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Challenge"],id:int,field:str, new_data: str):
     print(f"{interaction.user.display_name} ran /edit {to_edit} {id} {field} {new_data}")
 
     allowed_roles = [1242248445184573553]
@@ -123,14 +121,24 @@ async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon"],id:i
         try:
             mydb.connect()
             pokemon = Pokemon.get_by_id(id)
-            mydb.close()
             embed = await getPokemonCard(pokemon.identity)
             await interaction.response.send_message("Are you sure you want to edit this Pokemon?",embed=embed,view=YesCancelButtons(pokemon,field,new_data),ephemeral=True)
-            
         except Pokemon.DoesNotExist as e:
             await interaction.response.send_message("Im sorry but a Pokemon by that id does not exist! Please try again",ephemeral=True)
-            mydb.close()
             return
+        finally:
+            mydb.close()
+    elif to_edit == "Challenge":
+        try:
+            mydb.connect()
+            challenge = Challenge.get_by_id(id)
+
+            
+        except Challenge.DoesNotExist as e:
+            await interaction.response.send_message(f"I could not find a challenge with the id {id}!",ephemeral=True)
+            return
+        finally:
+            mydb.close()
 
 @bot.tree.command(name="add_pokemon",description="Add a Pokemon to the database. Only mods+ can run this command",guild=GUILD)
 @app_commands.describe(identity="The identity of the Pokemon, [n#]-[varient if any]-[f if female]")
