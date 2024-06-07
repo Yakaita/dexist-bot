@@ -2,11 +2,13 @@ from typing import List, Literal
 import discord.context_managers
 from discord.ext import commands
 from discord import app_commands
-from discord.utils import MISSING
+from peewee import fn
+
 from dotenv import load_dotenv
-from playhouse.mysql_ext import MySQLConnectorDatabase
-from peewee import *
-from datetime import date,datetime,timedelta
+load_dotenv()
+
+from models import *
+from datetime import datetime,timedelta
 import discord, os, json, logging, math
 import random as rand
 
@@ -14,7 +16,6 @@ logger = logging.getLogger('peewee')
 logger.addHandler(logging.StreamHandler())
 logger.setLevel(logging.DEBUG)
 
-load_dotenv()
 with open('config.json','r') as config_file: config = json.load(config_file)
 
 discordColors = {
@@ -81,69 +82,7 @@ GUILD = bot.get_guild(976929325406355477)
 
 # --------------------------------------------------------- Database stuff
 
-mydb = MySQLConnectorDatabase(
-  "u491157569_dexist",
-  user=os.getenv("DB_USERNAME"),
-  password=os.getenv("DB_PASSWORD"),
-  host=os.getenv("DB_HOST")
-)
 
-class BaseModel(Model):
-    class Meta:
-        database=mydb
-
-class Pokemon(BaseModel):
-    identity = CharField()
-    name = CharField()
-    national = IntegerField()
-    color = CharField()
-    isFemale = BooleanField(default=False)
-    varient = CharField()
-    type1 = CharField()
-    type2 = CharField(null=True,default=None)
-    generation = IntegerField()
-    before = IntegerField(null=True,default=None)
-    after = IntegerField(null=True,default=None)
-
-class Game(BaseModel):
-    name = CharField()
-    image = CharField()
-    generation = IntegerField()
-    spriteLocation = CharField()
-
-class GamePokemon(BaseModel):
-    pokemon = ForeignKeyField(Pokemon)
-    game = ForeignKeyField(Game)
-    notes = CharField()
-    regional = IntegerField()
-
-class User(BaseModel):
-    id = BigIntegerField(primary_key=True, unique=True)
-    level = IntegerField(default=0)
-    xp = IntegerField(default=0)
-    shinyXpTimesHit = IntegerField(default=0)
-    shinyXpEarned = IntegerField(default=0)
-
-class Challenge(BaseModel):
-    name = CharField()
-    timesRolled = IntegerField(default=0)
-    pointsAwarded = IntegerField(default=0)
-    description = CharField(default="")
-
-class Leaderboard(BaseModel):
-    user = ForeignKeyField(User)
-    pokemon = ForeignKeyField(Pokemon)
-    points = IntegerField(default=1)
-    date = DateField(default=date.today())
-    image = CharField()
-    challenge = ForeignKeyField(Challenge,null=True)
-
-class Week(BaseModel):
-    endDate = DateTimeField()
-    challenge = ForeignKeyField(Challenge)
-    challengeDesc = CharField()
-    pointsAwarded = IntegerField(default=0)
-    startedBy = ForeignKeyField(User)
 
 async def field_autocomplete(interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
     if interaction.namespace["to_edit"] == "Pokemon": fields = ["identity","name","national","color","isFemale","varient","type1","type2","generation","before","after"]
@@ -192,26 +131,6 @@ async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon"],id:i
             await interaction.response.send_message("Im sorry but a Pokemon by that id does not exist! Please try again",ephemeral=True)
             mydb.close()
             return
-
-async def edit_database_object(object, attribute: str, new_value:str):
-    try:
-        mydb.connect()
-        old_value = getattr(object,attribute)
-        attribute_type = type(old_value)
-
-        if attribute == "isFemale":
-                    new_value = 0 if new_value.lower() == "false" else 1
-
-        if attribute_type == int:
-            new_value = int(new_value)
-        
-        setattr(object,attribute,new_value)
-
-        object.save()
-    except Exception as e:
-        raise
-    finally:
-        mydb.close()
 
 @bot.tree.command(name="add_pokemon",description="Add a Pokemon to the database. Only mods+ can run this command",guild=GUILD)
 @app_commands.describe(identity="The identity of the Pokemon, [n#]-[varient if any]-[f if female]")
