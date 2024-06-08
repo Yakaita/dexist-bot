@@ -1,8 +1,8 @@
 from typing import List, Literal
-import discord.context_managers
 from discord.ext import commands
 from discord import app_commands
 from peewee import fn
+import asyncio
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -120,21 +120,22 @@ async def edit(interaction: discord.Interaction,to_edit: Literal["Pokemon","Chal
     if to_edit == "Pokemon":
         try:
             mydb.connect()
-            pokemon = Pokemon.get_by_id(id)
-            embed = await getPokemonCard(pokemon.identity)
-            await interaction.response.send_message("Are you sure you want to edit this Pokemon?",embed=embed,view=YesCancelButtons(pokemon,field,new_data),ephemeral=True)
-        except Pokemon.DoesNotExist as e:
+            pokemon = await asyncio.to_thread(Pokemon.get_by_id,id)
+        except Pokemon.DoesNotExist:
             await interaction.response.send_message("Im sorry but a Pokemon by that id does not exist! Please try again",ephemeral=True)
             return
         finally:
             mydb.close()
+
+        embed = await asyncio.to_thread(pokemon.get_embed)
+        await interaction.response.send_message("Are you sure you want to edit this Pokemon?",embed=embed,view=YesCancelButtons(pokemon,field,new_data),ephemeral=True)
     elif to_edit == "Challenge":
         try:
             mydb.connect()
-            challenge = Challenge.get_by_id(id)
+            challenge = await asyncio.to_thread(Challenge.get_by_id,id)
 
-            
-        except Challenge.DoesNotExist as e:
+            #todo: finish this
+        except Challenge.DoesNotExist:
             await interaction.response.send_message(f"I could not find a challenge with the id {id}!",ephemeral=True)
             return
         finally:
@@ -165,8 +166,7 @@ async def add_pokemon(interaction: discord.Interaction, identity:str, name:str, 
     try:
         mydb.connect()
 
-        test = Pokemon.get(Pokemon.identity == identity)
-
+        await asyncio.to_thread(Pokemon.get,Pokemon.identity == identity)
         await interaction.response.send_message(f"A Pokemon with that identifier already exists! Please use /Pokedex {identity} to see it",ephemeral=True)
         return
     except Pokemon.DoesNotExist:
@@ -179,28 +179,26 @@ async def add_pokemon(interaction: discord.Interaction, identity:str, name:str, 
 
         new_pokemon = Pokemon(identity=identity,name=name,isFemale=isfemale,national=national,color=color,varient=varient,type1=type1,type2=type2,generation=generation,before=before,after=after)
 
-        new_pokemon.save()
+        await asyncio.to_thread(new_pokemon.save)
 
         if before != None:
-            before_pokemon = Pokemon.get_by_id(before)
+            before_pokemon = await asyncio.to_thread(Pokemon.get_by_id,before)
             before_pokemon.after = new_pokemon.id
-            before_pokemon.save()
+            await asyncio.to_thread(before_pokemon.save)
 
         if after != None:
-            after_pokemon = Pokemon.get_by_id(after)
+            after_pokemon = await asyncio.to_thread(Pokemon.get_by_id,after)
             after_pokemon.before = new_pokemon.id
-            after_pokemon.save()
+            await asyncio.to_thread(after_pokemon.save)
     except Exception as e:
         await interaction.response.send_message(f"Failed to add Pokemon: {e}",ephemeral=True)
         return
     finally:
         mydb.close()
 
-    card = await getPokemonCard(new_pokemon.identity)
-    await interaction.response.send_message(f"{new_pokemon.identity} added with id of {new_pokemon.id}", embed=card,ephemeral=True,view=PokedexButtons(new_pokemon.id))
+    embed = await asyncio.to_thread(new_pokemon.get_embed)
+    await interaction.response.send_message(f"{new_pokemon.identity} added with id of {new_pokemon.id}", embed=embed,ephemeral=True,view=PokedexButtons(new_pokemon.id))
     
-
-
 # --------------------------------------------------------- end of database stuff
 # --------------------------------------------------------- Views
 
@@ -239,104 +237,58 @@ class PokedexButtons(discord.ui.View):
             self.children[0].disabled = True
             await interaction.response.edit_message(view=self)
             return
-        mydb.connect()
-        pokemon = Pokemon.get_by_id(self.id)
         
-        id = pokemon.before if pokemon.before != None else self.id - 1
+        try:
+            mydb.connect()
+            pokemon = await asyncio.to_thread(Pokemon.get_by_id,self.id)
+            new_id = pokemon.before if pokemon.before != None else self.id - 1
+            new_pokemon = await asyncio.to_thread(Pokemon.get_by_id,new_id)
+        except Exception as e:
+            await interaction.response.edit_message(f"Something went wrong: {e}")
+            return
+        finally:
+            mydb.close()
 
-        new_identifier = Pokemon.get_by_id(id).identity
-        mydb.close()
-        embed = await getPokemonCard(new_identifier)
-        await interaction.response.edit_message(embed=embed,view=PokedexButtons(id))
+        embed = await asyncio.to_thread(new_pokemon.get_embed)
+        await interaction.response.edit_message(embed=embed,view=PokedexButtons(new_id))
 
     @discord.ui.button(label="Next",style=discord.ButtonStyle.blurple)
     async def next(self,interaction: discord.Interaction, button:discord.ui.Button):
         try:
             mydb.connect()
-            pokemon = Pokemon.get_by_id(self.id)
-            
-            id = pokemon.after if pokemon.after != None else self.id + 1
-
-            new_identifier = Pokemon.get_by_id(id).identity
-            mydb.close()
-            embed = await getPokemonCard(new_identifier)
-            await interaction.response.edit_message(embed=embed,view=PokedexButtons(id))
-        except Pokemon.DoesNotExist as e:
-            mydb.close()
+            pokemon = await asyncio.to_thread(Pokemon.get_by_id,self.id)
+            new_id = pokemon.after if pokemon.after != None else self.id + 1
+            new_pokemon = await asyncio.to_thread(Pokemon.get_by_id,new_id)
+        except Pokemon.DoesNotExist:
             self.children[1].disabled = True
             await interaction.response.edit_message(view=self)
+        finally:
+            mydb.close()
 
+        embed = await asyncio.to_thread(new_pokemon.get_embed)
+        await interaction.response.edit_message(embed=embed,view=PokedexButtons(new_id))
 
 # --------------------------------------------------------- end of Views
 # --------------------------------------------------------- Xp and level stuff
-
-
-
-async def xpForLevel(level: int) -> int:
-    if level == 100: return 0
-
-    if level <= 5: return math.floor(4 * level**3 / 5 + 30)
-    else: return math.floor(4 * level**3 / 5)
-
-async def addXP(amount: int, user: User, canHitOdds: bool = True) -> bool:
-    if user.level == 100: return False
-
-    randomNum = rand.randint(1,8192)
-
-    if canHitOdds and  randomNum == 2024:
-        channel = bot.get_channel(1237051742781313066)
-        member = bot.get_user(user.id)
-        await channel.send(f"{member.mention} got lucky and got shiny XP! Thats 10 times the normal amount of xp!")
-        query = User.update(shinyXpTimesHit = User.shinyXpTimesHit + 1,shinyXpEarned = User.shinyXpEarned + amount * 9)
-        query.execute()
-
-        amount = amount * 10
-
-    xpNeededForNextLevel = await xpForLevel(user.level)
-    if user.xp + amount >= xpNeededForNextLevel:
-        newXP = user.xp + amount - xpNeededForNextLevel
-        await levelUp(user)
-
-        if newXP != 0: 
-            user = User.get_by_id(user.id)
-            await addXP(newXP,user,False)
-    else: 
-        query = User.update(xp = User.xp + amount).where(User.id == user.id)
-        query.execute()
-
-    return True
-
-async def levelUp(user: User):
-    query = User.update(level = User.level + 1, xp = 0).where(User.id == user.id)
-    query.execute()
-
-    channel = bot.get_channel(1237051742781313066)
-    member = bot.get_user(user.id)
-    embed = discord.Embed(
-        title = member.display_name + " just hit level " + str(user.level + 1) + "!",
-        description = "You need " + str(await xpForLevel(user.level + 1)) + " xp to level up again!" if (user.level + 1) < 100 else "You can't level up anymore my friend. You've reached the end!",
-        color= discord.Color.gold()
-    )
-    embed.set_author(
-        name = member.display_name,
-        icon_url = member.avatar.url       
-    )
-
-    await channel.send(member.mention, embed = embed)
 
 @bot.tree.command(name="level",description="See the level of yourself or someone else",guild=GUILD)
 @app_commands.describe(member="The user to display, leave blank to check your own level")
 async def level(interaction: discord.Interaction, member: discord.User = None):
     print(f"{interaction.user.display_name} ran /level {member.name if member != None else ""}")
 
-    mydb.connect()
-    
     if member == None: member = interaction.user
-            
-    user = User.get_by_id(member.id)
+    
+    try: 
+        mydb.connect()
+        user = await asyncio.to_thread(User.get_by_id,member.id)
+    except:
+        await interaction.response.send_message("I could not find that user!",ephemeral=True)
+    finally:
+        mydb.close()
+
     embed = discord.Embed(
         title = member.display_name + " is level " + str(user.level),
-        description = "XP: " + str(user.xp) + "/" + str(await xpForLevel(user.level)) if (user.level) < 100 else "No more xp.",
+        description = "XP: " + str(user.xp) + "/" + str(await asyncio.to_thread(user.xpForLevel)) if (user.level) < 100 else "No more xp.",
         color= discord.Color.gold()
     )
     embed.add_field(
@@ -354,7 +306,7 @@ async def level(interaction: discord.Interaction, member: discord.User = None):
         icon_url = member.avatar.url       
     )
 
-    await interaction.response.send_message(embed = embed,ephemeral=True)
+    await interaction.response.send_message(embed=embed,ephemeral=True)
 
     mydb.close()
 
@@ -374,71 +326,29 @@ async def award_xp(interaction: discord.Interaction, user: discord.User,amount: 
     
     try:
         mydb.connect()
-        table_user = User.get_by_id(user.id)
-        worked = await addXP(amount=amount,user=table_user,canHitOdds=True)
-
-        if worked:
-            await interaction.response.send_message(f"Awarded {amount} xp to {user.name}",ephemeral=True)
-        else:
-            await interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
+        table_user = asyncio.to_thread(User.get_by_id,user.id)
+        worked = await asyncio.to_thread(table_user.addXP,amount=amount,can_hit_odds=True)
     except Exception as e:
         await interaction.response.send_message(f"Failed to award xp: {e}",ephemeral=True)
+        return
     finally:
         mydb.close()
 
+    if worked:
+        await interaction.response.send_message(f"Awarded {amount} xp to {user.name}",ephemeral=True)
+    else:
+        await interaction.response.send_message(f"User is level 100 so I couldnt add any more xp!")
+
 # --------------------------------------------------------- end of xp / level stuff
 # --------------------------------------------------------- Pokemon stuff
-
-async def getPokemonCard(identifier: str) -> discord.Embed:
-    mydb.connect()
-
-    games = []
-
-    if identifier == 'random':
-        pokemon = Pokemon.select().order_by(fn.Rand()).limit(1).get()
-    else:
-        try:
-            pokemon = Pokemon.get(Pokemon.identity == identifier)
-        except Pokemon.DoesNotExist:
-            mydb.close()
-            raise ValueError(f"Pokemon with id {identifier} does not exist.")
-        
-    gamePokemon = GamePokemon.select(GamePokemon, Pokemon,Game).join(Pokemon).switch(GamePokemon).join(Game).where(Pokemon.id == pokemon.id)
-    games = [gameLine.game.name for gameLine in gamePokemon]
-    name_parts = [pokemon.name]
-    if pokemon.varient: name_parts.append(pokemon.varient)
-    if pokemon.isFemale == 1: name_parts.append("Female")
-
-    if len(name_parts) > 1: name = f"{pokemon.name} ({" ".join(name_parts[1:])})"
-    else: name = pokemon.name
-        
-    mydb.close()
-
-    types = [pokemon.type1]
-    if pokemon.type2 != "NA": types.append(pokemon.type2)
-    
-    embed = discord.Embed(
-        title=name,
-        description=pokemon.identity,
-        url='https://pokemondb.net/pokedex/' + str(pokemon.national),
-        color=discordColors[pokemon.color]
-    )
-    embed.set_image(url="https://github.com/okwurt/dextracker/blob/main/sprites/games/home/shiny/"+ pokemon.identity +".png?raw=true")
-    embed.add_field(name = "Types" if len(types) > 1 else "Type", value = "\n".join(types) if len(types) > 1 else pokemon.type1, inline = True)
-    embed.add_field(name = "Color", value = pokemon.color, inline = True)
-    embed.add_field(name = "Generation", value = pokemon.generation, inline = True)
-    embed.add_field(name = "National Pokedex Number", value = pokemon.national, inline = True)
-    embed.add_field(name = "Available Games", value = "None" if games.__len__() == 0 else "\n".join(games), inline = False)
-    embed.set_footer(text=pokemon.id)
-
-    return embed
 
 @bot.tree.command(name="random", description="Get the Pokedex page of a random Pokemon",guild=GUILD)
 async def random(interaction: discord.Interaction):
     print(f"{interaction.user.display_name} ran /random")
 
-    card = await getPokemonCard('random')
-    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
+    pokemon = await asyncio.to_thread(Pokemon.get_random)
+    embed = await asyncio.to_thread(pokemon.get_embed)
+    await interaction.response.send_message(embed=embed,view=PokedexButtons(int(embed.footer.text)),ephemeral=True)
 
 @bot.tree.command(name="pokedex", description="Lookup a Pokemon by their national dex number (and any extra identifiers)",guild=GUILD)
 @app_commands.describe(identity = "What Pokemon to look up")
@@ -446,13 +356,14 @@ async def pokedex(interaction: discord.Interaction, identity: str):
     print(f"{interaction.user.display_name} ran /pokedex {identity}")
     
     try:
-        card = await getPokemonCard(identity)
-    except ValueError as e:
+        pokemon = await asyncio.to_thread(Pokemon.get,Pokemon.identity == identity)
+        embed = await asyncio.to_thread(pokemon.get_embed)
+    except Exception as e:
         await interaction.response.send_message(f"Error: {e}",ephemeral=True)
         print(f"Error: {e}")
         return
 
-    await interaction.response.send_message(embed=card,view=PokedexButtons(int(card.footer.text)),ephemeral=True)
+    await interaction.response.send_message(embed=embed,view=PokedexButtons(int(embed.footer.text)),ephemeral=True)
 
 # --------------------------------------------------------- end of Pokemon stuff
 # --------------------------------------------------------- bot stuff
@@ -471,21 +382,20 @@ async def on_message(message):
     if message.author.bot: return
 
     memberID = message.author.id
-    
-    mydb.connect()
 
     try:
-        user = User.get(User.id == memberID)
+        user = asyncio.to_thread(User.get_by_id,memberID)
     except User.DoesNotExist:
-        user = User.create(id = memberID)
+        user = asyncio.to_thread(User.create,id = memberID)
 
-    await addXP(1,user)
+    await asyncio.to_thread(user.add_xp,1)
 
-    mydb.close()
     await bot.process_commands(message)
 
 # --------------------------------------------------------- end of bot stuff
 # --------------------------------------------------------- weekly and leaderboard stuff
+
+#todo continue refactor here
 
 @bot.tree.command(name="leaderboard",description="Shows the leaderboard",guild=GUILD)
 @app_commands.describe(type="The time frame to use when looking up the leaderboard")
