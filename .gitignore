@@ -2,3 +2,5 @@
 config.json
 dump.csv
 script.py
+__pycache__/bot.cpython-312.pyc
+__pycache__/models.cpython-312.pyc
